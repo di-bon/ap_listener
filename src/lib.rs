@@ -1,14 +1,7 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+#![allow(clippy::missing_panics_doc)]
+#![allow(clippy::struct_field_names)]
+#![allow(clippy::module_name_repetitions)]
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+mod listener;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use listener::{Listener, ListenerCommand};
