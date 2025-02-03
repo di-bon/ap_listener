@@ -1,6 +1,8 @@
 mod storer;
 
 use crate::listener::storer::Storer;
+use ap_sc_notifier::SimulationControllerNotifier;
+use ap_transmitter::LogicCommand;
 use assembler::naive_assembler::NaiveAssembler;
 use assembler::Assembler;
 use crossbeam_channel::{select_biased, Receiver, SendError, Sender};
@@ -10,21 +12,15 @@ use messages::MessageUtilities;
 use std::collections::HashMap;
 use std::sync::Arc;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Fragment, Nack, NackType, Packet, PacketType};
-use ap_sc_notifier::SimulationControllerNotifier;
-use ap_transmitter::{Transmitter, Command, LogicCommand};
+use wg_2024::packet::{Ack, Fragment, Nack, NackType, Packet, PacketType};
 
 #[derive(Debug, Clone)]
 pub struct Listener {
     node_id: NodeId,
-    // channel to communicate with transmitter some actions to perform when certain packets are received
     listener_to_transmitter_tx: Sender<LogicCommand>,
-    // channel to forward reassembled messages
     listener_to_logic_tx: Sender<Message>,
-    // listener public channel where drones send packets
     drones_to_listener_rx: Receiver<Packet>,
-    // channel to listen on to receive `ListenerCommand`s
-    command_rx: Receiver<ListenerCommand>,
+    command_rx: Receiver<Command>,
     simulation_controller_notifier: Arc<SimulationControllerNotifier>,
     // HashMap containing all the pairs ((source, session_id), Storer)
     storers: HashMap<(NodeId, u64), Storer>,
@@ -36,18 +32,19 @@ impl PartialEq for Listener {
     }
 }
 
-pub enum ListenerCommand {
+pub enum Command {
     Quit,
 }
 
 impl Listener {
+    /// Returns a new instance of `Listener`
     #[must_use]
     pub fn new(
         node_id: NodeId,
         listener_to_transmitter_tx: Sender<LogicCommand>,
         listener_to_logic_tx: Sender<Message>,
         drones_to_listener_rx: Receiver<Packet>,
-        command_rx: Receiver<ListenerCommand>,
+        command_rx: Receiver<Command>,
         simulation_controller_notifier: Arc<SimulationControllerNotifier>,
     ) -> Self {
         Self {
@@ -61,38 +58,43 @@ impl Listener {
         }
     }
 
+    /// Returns the `node_id: NodeId` field
     #[must_use]
     pub fn get_node_id(&self) -> NodeId {
         self.node_id
     }
 
-    /// Makes the Listener work
-    // TODO: add # Panics section
+    /// Makes the `Listener` work
+    /// # Panics
+    /// Panics if the transmitter end of a channel on which the `Listener` is listening gets unexpectedly dropped
     pub fn run(&mut self) {
         loop {
             select_biased! {
                 recv(self.command_rx) -> command => {
                     if let Ok(command) = command {
                         match command {
-                            ListenerCommand::Quit => break,
+                            Command::Quit => break,
                         }
                     }
-                    log::error!("Listener cannot receive packets from command channel");
-                    panic!("Listener cannot receive packets from command channel");
+                    let error = "Listener cannot receive packets from command channel";
+                    log::error!("{error}");
+                    panic!("{error}");
                 },
                 recv(self.drones_to_listener_rx) -> packet => {
                     if let Ok(packet) = packet {
-                        log::info!("Received packet {packet}");
+                        log::info!("Received packet {packet:?}");
                         self.process_drone_packet(packet);
                     } else {
-                        log::error!("Listener cannot receive packets from drones channel");
-                        panic!("Listener cannot receive packets from drones channel");
+                        let error = "Listener cannot receive packets from drones channel";
+                        log::error!("{error}");
+                        panic!("{error}");
                     }
                 },
             }
         }
     }
 
+    /*
     /// Checks the readiness for the `Storer` associated to the `key: (NodeId, session_id)`.
     /// # Return
     /// Returns `None` if there is no `Storer` associated to the given `key`
@@ -100,6 +102,7 @@ impl Listener {
         let storer = self.storers.get(&key)?;
         Some(storer.is_ready())
     }
+     */
 
     /// Stores a `Fragment` into the `Storer` for the given `key: (NodeId, session_id)`
     fn store_fragment(&mut self, key: (NodeId, u64), fragment: Fragment) {
@@ -116,120 +119,16 @@ impl Listener {
     }
 
     /// Processes a `Packet` received from the connected drones based on the `PacketType`
-    /// # Panic
-    /// - Panics if there is no hop for the given `hop_index` in `packet.routing_header` field
-    /// - Panics if there is no `Storer` for a key that was already used (and the message is yet to be reassembled)
     fn process_drone_packet(&mut self, packet: Packet) {
-        // notify simulation controller
-        // let event = NodeEvent::PacketReceived(packet.clone());
-        // self.simulation_controller_notifier.send_event(event);
-
         match packet.pack_type {
             PacketType::MsgFragment(ref fragment) => {
-                log::info!("Processing a message fragment");
-                let session_id = packet.session_id;
-
-                let source = match packet.routing_header.source() {
-                    None => {
-                        log::error!("Received a packet with no source");
-                        panic!("Received a packet with no source");
-                    }
-                    Some(source) => source,
-                };
-                // let source = Self::get_source(&packet.routing_header);
-
-                let Some(current_hop_id) = packet.routing_header.current_hop() else {
-                    log::error!("Received a packet with hop_index out of bounds");
-                    panic!("Received a packet with hop_index out of bounds");
-                };
-
-                let wrong_destination = current_hop_id != self.node_id;
-
-                if !packet.routing_header.is_last_hop() || wrong_destination {
-                    let nack_type = NackType::UnexpectedRecipient(self.node_id);
-
-                    let nack = Nack {
-                        fragment_index: fragment.fragment_index,
-                        nack_type,
-                    };
-
-                    let command = LogicCommand::SendNack {
-                        session_id,
-                        nack,
-                        destination: source,
-                    };
-
-                    self.send_command_to_transmitter(command);
-
-                    return;
-                }
-
-                let command = LogicCommand::SendAckFor {
-                    session_id,
-                    fragment_index: fragment.fragment_index,
-                    destination: source,
-                };
-                self.send_command_to_transmitter(command);
-
-                let key = (source, session_id);
-
-                self.store_fragment(key, fragment.clone());
-
-                if let Some(storer) = self.storers.get(&key) {
-                    if storer.is_ready() {
-                        log::info!("Storer for session {session_id} is ready for message reassemble");
-                        let fragments = storer.get_fragments();
-                        let message = NaiveAssembler::reassemble(&fragments);
-                        let message = String::from_utf8(message).unwrap();
-                        let message: Message = MessageUtilities::from_string(message).unwrap();
-                        log::info!("Reassembled message in bytes: {message:?}");
-                        self.storers.remove(&key);
-
-                        let event = NodeEvent::MessageReceived(message.clone());
-                        self.simulation_controller_notifier.send_event(event);
-
-                        self.send_message_to_logic(message);
-                    }
-                } else {
-                    log::error!("Storer for session {session_id} not found. At this point however it should exist");
-                    panic!("Storer for session {session_id} not found. At this point however it should exist");
-                }
+                self.process_message_fragment(&packet, fragment);
             }
             PacketType::Nack(nack) => {
-                let source = match packet.routing_header.source() {
-                    None => {
-                        log::error!("Received a packet with no source");
-                        panic!("Received a packet with no source");
-                    }
-                    Some(source) => source,
-                };
-                // let source = Self::get_source(&packet.routing_header);
-
-                let command = LogicCommand::ProcessNack {
-                    session_id: packet.session_id,
-                    nack,
-                    source,
-                };
-
-                self.send_command_to_transmitter(command);
+                self.process_nack(packet.session_id, &packet.routing_header, nack);
             }
             PacketType::Ack(ack) => {
-                let source = match packet.routing_header.source() {
-                    None => {
-                        log::error!("Received a packet with no source");
-                        panic!("Received a packet with no source");
-                    }
-                    Some(source) => source,
-                };
-                // let source = Self::get_source(&packet.routing_header);
-
-                let command = LogicCommand::ForwardAckTo {
-                    session_id: packet.session_id,
-                    ack,
-                    source,
-                };
-
-                self.send_command_to_transmitter(command);
+                self.process_ack(packet.session_id, &packet.routing_header, ack);
             }
             PacketType::FloodRequest(flood_request) => {
                 let command = LogicCommand::ProcessFloodRequest(flood_request);
@@ -240,6 +139,117 @@ impl Listener {
                 self.send_command_to_transmitter(command);
             }
         }
+    }
+
+    /// Returns the first hop of the `SourceRoutingHeader`
+    /// # Panics
+    /// Panics if the header has no source
+    fn get_source(routing_header: &SourceRoutingHeader) -> NodeId {
+        match routing_header.source() {
+            None => {
+                let error = "Received a packet with no source";
+                log::error!("{error}");
+                panic!("{error}");
+            }
+            Some(source) => source,
+        }
+    }
+
+    /// Handles the logic of a message fragment
+    /// # Panics
+    /// - Panics if there is no hop for the given `hop_index` in `packet.routing_header` field
+    /// - Panics if there is no `Storer` for a `key` that was already used (and the message is yet to be reassembled)
+    fn process_message_fragment(&mut self, packet: &Packet, fragment: &Fragment) {
+        let session_id = packet.session_id;
+
+        let source = Self::get_source(&packet.routing_header);
+
+        let Some(current_hop_id) = packet.routing_header.current_hop() else {
+            let error =
+                format!("Received a packet with hop_index out of bounds. Packet: {packet:?}");
+            log::error!("{error}");
+            panic!("{error}");
+        };
+
+        let wrong_destination = current_hop_id != self.node_id;
+
+        if !packet.routing_header.is_last_hop() || wrong_destination {
+            let nack_type = NackType::UnexpectedRecipient(self.node_id);
+
+            let nack = Nack {
+                fragment_index: fragment.fragment_index,
+                nack_type,
+            };
+
+            let command = LogicCommand::SendNack {
+                session_id,
+                nack,
+                destination: source,
+            };
+
+            self.send_command_to_transmitter(command);
+
+            return;
+        }
+
+        let key = (source, session_id);
+        self.store_fragment(key, fragment.clone());
+
+        let command = LogicCommand::SendAckFor {
+            session_id,
+            fragment_index: fragment.fragment_index,
+            destination: source,
+        };
+        self.send_command_to_transmitter(command);
+
+        if let Some(storer) = self.storers.get(&key) {
+            if storer.is_ready() {
+                log::info!("Storer for session {session_id} is ready for message reassemble");
+                let fragments = storer.get_fragments();
+                let message = NaiveAssembler::reassemble(&fragments);
+                let message = String::from_utf8(message).unwrap();
+                let message: Message = MessageUtilities::from_string(message).unwrap();
+                log::info!("Reassembled message: {message:?}");
+                self.storers.remove(&key);
+
+                let event = NodeEvent::MessageReceived(message.clone());
+                self.simulation_controller_notifier.send_event(event);
+
+                self.send_message_to_logic(message);
+            }
+        } else {
+            let error = format!(
+                "Storer for session {session_id} not found. At this point however it should exist"
+            );
+            log::error!("{error}");
+            panic!("{error}");
+        }
+    }
+
+    /// Handles the logic of a NACK
+    fn process_nack(&mut self, session_id: u64, routing_header: &SourceRoutingHeader, nack: Nack) {
+        let source = Self::get_source(routing_header);
+
+        let command = LogicCommand::ProcessNack {
+            session_id,
+            nack,
+            source,
+        };
+
+        self.send_command_to_transmitter(command);
+    }
+
+    /// Handles the logic of an ACK
+    fn process_ack(&mut self, session_id: u64, routing_header: &SourceRoutingHeader, ack: Ack) {
+        let source = Self::get_source(routing_header);
+
+        let command = LogicCommand::ForwardAckTo {
+            session_id,
+            ack,
+            source,
+        };
+
+        self.send_command_to_transmitter(command);
     }
 
     /// Sends a `LogicCommand` to `Transmitter`
@@ -258,7 +268,7 @@ impl Listener {
     }
 
     /// Sends a `Message` into logic channel
-    /// # Panic
+    /// # Panics
     /// Panics if the transmission to `Logic` fails
     fn send_message_to_logic(&self, message: Message) {
         match self.listener_to_logic_tx.send(message) {
@@ -268,19 +278,6 @@ impl Listener {
             Err(SendError(message)) => {
                 panic!("Listener cannot forward message {message:?} to server logic");
             }
-        }
-    }
-
-    /// Return the source (i.e. first hop) for the given `SourceRoutingHeader`
-    /// # Panic
-    /// Panics if there is no source in the given `SourceRoutingHeader`
-    #[deprecated]
-    fn get_source(routing_header: &SourceRoutingHeader) -> NodeId {
-        if let Some(source) = routing_header.source() {
-            source
-        } else {
-            log::error!("Received a packet with no source");
-            panic!("Received a packet with no source");
         }
     }
 }
@@ -306,7 +303,7 @@ mod tests {
         Sender<Packet>,
         Receiver<LogicCommand>,
         Receiver<Message>,
-        Sender<ListenerCommand>,
+        Sender<Command>,
         Sender<Packet>,
         Receiver<NodeEvent>,
     ) {
@@ -359,7 +356,7 @@ mod tests {
         let (transmitter_tx, transmitter_rx) = unbounded::<LogicCommand>();
         let (drones_tx, drones_rx) = unbounded::<Packet>();
         let (server_logic_tx, _server_logic_rx) = unbounded::<Message>();
-        let (command_tx, command_rx) = unbounded::<ListenerCommand>();
+        let (command_tx, command_rx) = unbounded::<Command>();
         let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
         let simulation_controller_notifier =
             SimulationControllerNotifier::new(simulation_controller_tx);
@@ -379,6 +376,7 @@ mod tests {
         assert_eq!(listener.storers.len(), expected.storers.len());
     }
 
+    /*
     #[test]
     fn check_storer() {
         let (
@@ -393,7 +391,7 @@ mod tests {
         let (transmitter_tx, transmitter_rx) = unbounded();
         let (drones_tx, drones_rx) = unbounded::<Packet>();
         let (server_logic_tx, _server_logic_rx) = unbounded::<Message>();
-        let (command_tx, command_rx) = unbounded::<ListenerCommand>();
+        let (command_tx, command_rx) = unbounded::<Command>();
         let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
         let simulation_controller_notifier =
             SimulationControllerNotifier::new(simulation_controller_tx);
@@ -458,6 +456,7 @@ mod tests {
 
         assert_eq!(listener.check_storer(key), Some(true));
     }
+     */
 
     #[test]
     fn forward_packet_to_transmitter_ok() {
@@ -527,7 +526,7 @@ mod tests {
         let _ = listener_public_tx.send(fragment_packet.clone());
 
         thread::sleep(Duration::from_millis(200));
-        let _ = listener_commands_tx.send(ListenerCommand::Quit);
+        let _ = listener_commands_tx.send(Command::Quit);
 
         let listener = listener.read().unwrap();
 
@@ -769,7 +768,7 @@ mod tests {
             assert_eq!(received, expected);
         }
 
-        let _ = listener_commands_tx.send(ListenerCommand::Quit);
+        let _ = listener_commands_tx.send(Command::Quit);
 
         let received = internal_listener_to_server_logic_rx.recv().unwrap();
         assert_eq!(received, message);

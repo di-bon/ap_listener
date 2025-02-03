@@ -8,7 +8,7 @@ pub struct Storer {
 }
 
 impl Storer {
-    /// Creates a new instance of Storer with the given fragment count
+    /// Creates a new instance of `Storer` with the given `fragment_count`
     fn new(fragment_count: usize) -> Self {
         Self {
             fragment_count,
@@ -17,7 +17,7 @@ impl Storer {
     }
 
     /// Creates a new instance of `Storer` from a `Fragment`, setting `fragment_count` equal to the
-    /// `total_n_fragments` field of the passed `Fragment`
+    /// `total_n_fragments` field of the passed `Fragment` and storing it
     pub fn new_from_fragment(fragment: Fragment) -> Self {
         #[allow(clippy::cast_possible_truncation)]
         let fragment_count = fragment.total_n_fragments as usize;
@@ -39,12 +39,12 @@ impl Storer {
         self.fragments.insert(fragment.fragment_index, fragment);
     }
 
-    /// Checks whether all the fragments for this Storer have been received
+    /// Checks whether all the fragments for this `Storer` have been received
     pub fn is_ready(&self) -> bool {
         self.fragments.len() == self.fragment_count
     }
 
-    /// Returns a Vec<Fragment> containing all the received fragments
+    /// Returns a `Vec<Fragment>` containing all the received fragments
     pub fn get_fragments(&self) -> Vec<Fragment> {
         let mut vector = self.fragments.values().cloned().collect::<Vec<Fragment>>();
         vector.sort_by_key(|fragment: &Fragment| fragment.fragment_index);
