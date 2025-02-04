@@ -1,6 +1,6 @@
 use ap_listener::{Command, Listener};
 use ap_sc_notifier::SimulationControllerNotifier;
-use ap_transmitter::LogicCommand;
+use ap_transmitter::PacketCommand;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use messages::node_event::NodeEvent;
 use messages::Message;
@@ -26,7 +26,7 @@ fn create_listener(
     simulation_controller_notifier: Arc<SimulationControllerNotifier>,
 ) -> (
     Listener,
-    Receiver<LogicCommand>,
+    Receiver<PacketCommand>,
     Receiver<Message>,
     Sender<Packet>,
     Sender<Command>,
@@ -154,7 +154,7 @@ fn check_unexpected_recipient() {
 
     let received = listener_to_transmitter_rx.recv().unwrap();
 
-    let expected = LogicCommand::SendNack {
+    let expected = PacketCommand::SendNack {
         session_id: 0,
         nack: Nack {
             fragment_index: 0,
@@ -187,7 +187,7 @@ fn check_unexpected_recipient() {
 
     let received = listener_to_transmitter_rx.recv().unwrap();
 
-    let expected = LogicCommand::SendNack {
+    let expected = PacketCommand::SendNack {
         session_id: 0,
         nack: Nack {
             fragment_index: 0,

@@ -2,7 +2,7 @@ mod storer;
 
 use crate::listener::storer::Storer;
 use ap_sc_notifier::SimulationControllerNotifier;
-use ap_transmitter::LogicCommand;
+use ap_transmitter::PacketCommand;
 use assembler::naive_assembler::NaiveAssembler;
 use assembler::Assembler;
 use crossbeam_channel::{select_biased, Receiver, SendError, Sender};
@@ -17,7 +17,7 @@ use wg_2024::packet::{Ack, Fragment, Nack, NackType, Packet, PacketType};
 #[derive(Debug, Clone)]
 pub struct Listener {
     node_id: NodeId,
-    listener_to_transmitter_tx: Sender<LogicCommand>,
+    listener_to_transmitter_tx: Sender<PacketCommand>,
     listener_to_logic_tx: Sender<Message>,
     drones_to_listener_rx: Receiver<Packet>,
     command_rx: Receiver<Command>,
@@ -41,7 +41,7 @@ impl Listener {
     #[must_use]
     pub fn new(
         node_id: NodeId,
-        listener_to_transmitter_tx: Sender<LogicCommand>,
+        listener_to_transmitter_tx: Sender<PacketCommand>,
         listener_to_logic_tx: Sender<Message>,
         drones_to_listener_rx: Receiver<Packet>,
         command_rx: Receiver<Command>,
@@ -131,11 +131,11 @@ impl Listener {
                 self.process_ack(packet.session_id, &packet.routing_header, ack);
             }
             PacketType::FloodRequest(flood_request) => {
-                let command = LogicCommand::ProcessFloodRequest(flood_request);
+                let command = PacketCommand::ProcessFloodRequest(flood_request);
                 self.send_command_to_transmitter(command);
             }
             PacketType::FloodResponse(flood_response) => {
-                let command = LogicCommand::ProcessFloodResponse(flood_response);
+                let command = PacketCommand::ProcessFloodResponse(flood_response);
                 self.send_command_to_transmitter(command);
             }
         }
@@ -181,7 +181,7 @@ impl Listener {
                 nack_type,
             };
 
-            let command = LogicCommand::SendNack {
+            let command = PacketCommand::SendNack {
                 session_id,
                 nack,
                 destination: source,
@@ -195,7 +195,7 @@ impl Listener {
         let key = (source, session_id);
         self.store_fragment(key, fragment.clone());
 
-        let command = LogicCommand::SendAckFor {
+        let command = PacketCommand::SendAckFor {
             session_id,
             fragment_index: fragment.fragment_index,
             destination: source,
@@ -230,7 +230,7 @@ impl Listener {
     fn process_nack(&mut self, session_id: u64, routing_header: &SourceRoutingHeader, nack: Nack) {
         let source = Self::get_source(routing_header);
 
-        let command = LogicCommand::ProcessNack {
+        let command = PacketCommand::ProcessNack {
             session_id,
             nack,
             source,
@@ -243,7 +243,7 @@ impl Listener {
     fn process_ack(&mut self, session_id: u64, routing_header: &SourceRoutingHeader, ack: Ack) {
         let source = Self::get_source(routing_header);
 
-        let command = LogicCommand::ForwardAckTo {
+        let command = PacketCommand::ForwardAckTo {
             session_id,
             ack,
             source,
@@ -252,10 +252,10 @@ impl Listener {
         self.send_command_to_transmitter(command);
     }
 
-    /// Sends a `LogicCommand` to `Transmitter`
+    /// Sends a `PacketCommand` to `Transmitter`
     /// # Panic
     /// Panics if the transmission to `Transmitter` fails
-    fn send_command_to_transmitter(&self, command: LogicCommand) {
+    fn send_command_to_transmitter(&self, command: PacketCommand) {
         match self.listener_to_transmitter_tx.send(command) {
             Ok(()) => {
                 log::info!("Command successfully sent to transmitter");
@@ -301,7 +301,7 @@ mod tests {
     ) -> (
         Listener,
         Sender<Packet>,
-        Receiver<LogicCommand>,
+        Receiver<PacketCommand>,
         Receiver<Message>,
         Sender<Command>,
         Sender<Packet>,
@@ -353,7 +353,7 @@ mod tests {
             simulation_controller_rx,
         ) = create_listener_and_channels(1);
 
-        let (transmitter_tx, transmitter_rx) = unbounded::<LogicCommand>();
+        let (transmitter_tx, transmitter_rx) = unbounded::<PacketCommand>();
         let (drones_tx, drones_rx) = unbounded::<Packet>();
         let (server_logic_tx, _server_logic_rx) = unbounded::<Message>();
         let (command_tx, command_rx) = unbounded::<Command>();
@@ -470,7 +470,7 @@ mod tests {
             simulation_controller_rx,
         ) = create_listener_and_channels(1);
 
-        let command = LogicCommand::ForwardAckTo {
+        let command = PacketCommand::ForwardAckTo {
             session_id: 0,
             ack: Ack { fragment_index: 0 },
             source: 0,
@@ -556,7 +556,7 @@ mod tests {
 
         let ack = Ack { fragment_index: 0 };
 
-        let expected = LogicCommand::ForwardAckTo {
+        let expected = PacketCommand::ForwardAckTo {
             session_id: 0,
             ack: ack.clone(),
             source: 5,
@@ -604,7 +604,7 @@ mod tests {
             nack_type: NackType::ErrorInRouting(1),
         };
 
-        let expected = LogicCommand::ProcessNack {
+        let expected = PacketCommand::ProcessNack {
             session_id: 0,
             nack: nack.clone(),
             source: 0,
@@ -653,7 +653,7 @@ mod tests {
             path_trace: vec![(10, NodeType::Client), (4, NodeType::Drone)],
         };
 
-        let expected = LogicCommand::ProcessFloodRequest(flood_request.clone());
+        let expected = PacketCommand::ProcessFloodRequest(flood_request.clone());
 
         let flood_request = Packet {
             routing_header: SourceRoutingHeader {
@@ -697,7 +697,7 @@ mod tests {
             path_trace: vec![(10, NodeType::Client), (4, NodeType::Drone)],
         };
 
-        let expected = LogicCommand::ProcessFloodResponse(flood_response.clone());
+        let expected = PacketCommand::ProcessFloodResponse(flood_response.clone());
 
         let flood_response = Packet {
             routing_header: SourceRoutingHeader {
@@ -755,7 +755,7 @@ mod tests {
                 pack_type: PacketType::MsgFragment(fragment.clone()),
             };
 
-            let expected = LogicCommand::SendAckFor {
+            let expected = PacketCommand::SendAckFor {
                 session_id: 0,
                 fragment_index: fragment.fragment_index,
                 destination: 0,
