@@ -8,6 +8,7 @@ use messages::node_event::NodeEvent;
 use messages::Message;
 use messages::MessageUtilities;
 use std::collections::HashMap;
+use std::panic;
 use std::sync::Arc;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Ack, Fragment, Nack, NackType, Packet, PacketType};
@@ -58,7 +59,7 @@ impl Listener {
         }
     }
 
-    /// Returns the `node_id: NodeId` field
+    /// Returns the value of `self.node_id`
     #[must_use]
     pub fn get_node_id(&self) -> NodeId {
         self.node_id
@@ -68,6 +69,12 @@ impl Listener {
     /// # Panics
     /// Panics if the transmitter end of a channel on which the `Listener` is listening gets unexpectedly dropped
     pub fn run(&mut self) {
+        panic::set_hook(Box::new(|info| {
+            let panic_msg = format!("Panic occurred: {info}");
+            log::error!("{panic_msg}"); // Log the panic
+            eprintln!("{panic_msg}"); // Print to stderr
+        }));
+
         loop {
             select_biased! {
                 recv(self.command_rx) -> command => {
@@ -76,18 +83,14 @@ impl Listener {
                             Command::Quit => break,
                         }
                     }
-                    let error = "Listener cannot receive packets from command channel";
-                    log::error!("{error}");
-                    panic!("{error}");
+                    panic!("Listener cannot receive packets from command channel");
                 },
                 recv(self.drones_to_listener_rx) -> packet => {
                     if let Ok(packet) = packet {
                         log::info!("Received packet {packet:?}");
                         self.process_drone_packet(packet);
                     } else {
-                        let error = "Listener cannot receive packets from drones channel";
-                        log::error!("{error}");
-                        panic!("{error}");
+                        panic!("Listener cannot receive packets from drones channel");
                     }
                 },
             }
@@ -147,9 +150,7 @@ impl Listener {
     fn get_source(routing_header: &SourceRoutingHeader) -> NodeId {
         match routing_header.source() {
             None => {
-                let error = "Received a packet with no source";
-                log::error!("{error}");
-                panic!("{error}");
+                panic!("Received a packet with no source. Header: {routing_header:?}");
             }
             Some(source) => source,
         }
@@ -165,10 +166,7 @@ impl Listener {
         let source = Self::get_source(&packet.routing_header);
 
         let Some(current_hop_id) = packet.routing_header.current_hop() else {
-            let error =
-                format!("Received a packet with hop_index out of bounds. Packet: {packet:?}");
-            log::error!("{error}");
-            panic!("{error}");
+            panic!("Received a packet with hop_index out of bounds. Packet: {packet:?}");
         };
 
         let wrong_destination = current_hop_id != self.node_id;
@@ -218,15 +216,12 @@ impl Listener {
                 self.send_message_to_logic(message);
             }
         } else {
-            let error = format!(
-                "Storer for session {session_id} not found. At this point however it should exist"
-            );
-            log::error!("{error}");
+            let error = format!("Storer for session {session_id} not found. At this point however it should exist");
             panic!("{error}");
         }
     }
 
-    /// Handles the logic of a NACK
+    /// Handles the logic of a NACK by sending the appropriate PacketCommand to Transmitter
     fn process_nack(&mut self, session_id: u64, routing_header: &SourceRoutingHeader, nack: Nack) {
         let source = Self::get_source(routing_header);
 
@@ -239,7 +234,7 @@ impl Listener {
         self.send_command_to_transmitter(command);
     }
 
-    /// Handles the logic of an ACK
+    /// Handles the logic of an ACK by sending the appropriate PacketCommand to Transmitter
     fn process_ack(&mut self, session_id: u64, routing_header: &SourceRoutingHeader, ack: Ack) {
         let source = Self::get_source(routing_header);
 
@@ -253,7 +248,7 @@ impl Listener {
     }
 
     /// Sends a `PacketCommand` to `Transmitter`
-    /// # Panic
+    /// # Panics
     /// Panics if the transmission to `Transmitter` fails
     fn send_command_to_transmitter(&self, command: PacketCommand) {
         match self.listener_to_transmitter_tx.send(command) {
@@ -261,7 +256,6 @@ impl Listener {
                 log::info!("Command successfully sent to transmitter");
             }
             Err(SendError(command)) => {
-                log::warn!("Listener cannot send command {command:?} to transmitter");
                 panic!("Listener cannot send command {command:?} to transmitter");
             }
         }
@@ -273,10 +267,10 @@ impl Listener {
     fn send_message_to_logic(&self, message: Message) {
         match self.listener_to_logic_tx.send(message) {
             Ok(()) => {
-                log::info!("Listener successfully forwarded a message to server logic");
+                log::info!("Listener successfully forwarded a message to logic");
             }
             Err(SendError(message)) => {
-                panic!("Listener cannot forward message {message:?} to server logic");
+                panic!("Listener cannot forward message {message:?} to logic");
             }
         }
     }

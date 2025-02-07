@@ -1,3 +1,5 @@
+#![allow(unused_variables)]
+
 use ap_listener::{Command, Listener};
 use ap_sc_notifier::SimulationControllerNotifier;
 use ap_transmitter::PacketCommand;
@@ -8,7 +10,7 @@ use ntest::timeout;
 use std::sync::Arc;
 use std::thread;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Ack, Fragment, Nack, NackType, Packet, PacketType};
+use wg_2024::packet::{Fragment, Nack, NackType, Packet, PacketType};
 
 fn create_simulation_controller_notifier(
 ) -> (Arc<SimulationControllerNotifier>, Receiver<NodeEvent>) {

@@ -18,7 +18,7 @@ impl Storer {
 
     /// Creates a new instance of `Storer` from a `Fragment`, setting `fragment_count` equal to the
     /// `total_n_fragments` field of the passed `Fragment` and storing it
-    pub fn new_from_fragment(fragment: Fragment) -> Self {
+    pub(super) fn new_from_fragment(fragment: Fragment) -> Self {
         #[allow(clippy::cast_possible_truncation)]
         let fragment_count = fragment.total_n_fragments as usize;
         let mut result = Self::new(fragment_count);
@@ -27,12 +27,11 @@ impl Storer {
     }
 
     /// Inserts a `Fragment` into `Storer`
-    /// # Panic
+    /// # Panics
     /// Panics if `fragment.fragment_index` is equal or exceeds `self.fragment_count`
-    pub fn insert_fragment(&mut self, fragment: Fragment) {
+    pub(super) fn insert_fragment(&mut self, fragment: Fragment) {
         #[allow(clippy::cast_possible_truncation)]
         if (fragment.fragment_index as usize) >= self.fragment_count {
-            log::error!("fragment index {} out of bounds", fragment.fragment_index);
             panic!("fragment index {} out of bounds", fragment.fragment_index);
         }
         log::info!("Storing fragment {fragment}");
@@ -40,12 +39,12 @@ impl Storer {
     }
 
     /// Checks whether all the fragments for this `Storer` have been received
-    pub fn is_ready(&self) -> bool {
+    pub(super) fn is_ready(&self) -> bool {
         self.fragments.len() == self.fragment_count
     }
 
     /// Returns a `Vec<Fragment>` containing all the received fragments
-    pub fn get_fragments(&self) -> Vec<Fragment> {
+    pub(super) fn get_fragments(&self) -> Vec<Fragment> {
         let mut vector = self.fragments.values().cloned().collect::<Vec<Fragment>>();
         vector.sort_by_key(|fragment: &Fragment| fragment.fragment_index);
         vector
