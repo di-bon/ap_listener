@@ -54,6 +54,7 @@ impl Storer {
 
 #[cfg(test)]
 mod test {
+    #![allow(unused_variables)]
     use crate::listener::storer::Storer;
     use std::collections::HashMap;
     use wg_2024::packet::Fragment;

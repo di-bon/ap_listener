@@ -1,5 +1,3 @@
-mod storer;
-
 use crate::listener::storer::Storer;
 use ap_sc_notifier::SimulationControllerNotifier;
 use ap_transmitter::PacketCommand;
@@ -13,6 +11,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Ack, Fragment, Nack, NackType, Packet, PacketType};
+
+mod storer;
 
 #[derive(Debug, Clone)]
 pub struct Listener {
@@ -284,6 +284,8 @@ impl Listener {
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_variables)]
+
     use super::*;
     use crossbeam_channel::unbounded;
     use messages::{MessageType, RequestType, TextRequest};
