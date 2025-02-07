@@ -27,12 +27,6 @@ pub struct Listener {
     storers: HashMap<(NodeId, u64), Storer>,
 }
 
-impl PartialEq for Listener {
-    fn eq(&self, other: &Self) -> bool {
-        self.node_id == other.node_id && self.storers == other.storers
-    }
-}
-
 pub enum Command {
     Quit,
 }
@@ -96,16 +90,6 @@ impl Listener {
             }
         }
     }
-
-    /*
-    /// Checks the readiness for the `Storer` associated to the `key: (NodeId, session_id)`.
-    /// # Return
-    /// Returns `None` if there is no `Storer` associated to the given `key`
-    fn check_storer(&self, key: (NodeId, u64)) -> Option<bool> {
-        let storer = self.storers.get(&key)?;
-        Some(storer.is_ready())
-    }
-     */
 
     /// Stores a `Fragment` into the `Storer` for the given `key: (NodeId, session_id)`
     fn store_fragment(&mut self, key: (NodeId, u64), fragment: Fragment) {
@@ -371,88 +355,6 @@ mod tests {
         assert_eq!(listener.node_id, expected.node_id);
         assert_eq!(listener.storers.len(), expected.storers.len());
     }
-
-    /*
-    #[test]
-    fn check_storer() {
-        let (
-            mut listener,
-            internal_transmitter_to_listener_tx,
-            internal_listener_to_transmitter_rx,
-            internal_listener_to_server_logic_rx,
-            listener_commands_tx,
-            listener_public_tx,
-            simulation_controller_rx,
-        ) = create_listener_and_channels(1);
-        let (transmitter_tx, transmitter_rx) = unbounded();
-        let (drones_tx, drones_rx) = unbounded::<Packet>();
-        let (server_logic_tx, _server_logic_rx) = unbounded::<Message>();
-        let (command_tx, command_rx) = unbounded::<Command>();
-        let (simulation_controller_tx, simulation_controller_rx) = unbounded::<NodeEvent>();
-        let simulation_controller_notifier =
-            SimulationControllerNotifier::new(simulation_controller_tx);
-        let simulation_controller_notifier = Arc::new(simulation_controller_notifier);
-
-        let mut expected = Listener {
-            node_id: 1,
-            listener_to_transmitter_tx: transmitter_tx,
-            listener_to_logic_tx: server_logic_tx,
-            drones_to_listener_rx: drones_rx,
-            command_rx,
-            simulation_controller_notifier,
-            storers: Default::default(),
-        };
-
-        assert_eq!(listener, expected);
-
-        let session_id = 0;
-        let fragments = vec![
-            Fragment {
-                fragment_index: 0,
-                total_n_fragments: 3,
-                length: 128,
-                data: [0; 128],
-            },
-            Fragment {
-                fragment_index: 1,
-                total_n_fragments: 3,
-                length: 128,
-                data: [0; 128],
-            },
-            Fragment {
-                fragment_index: 2,
-                total_n_fragments: 3,
-                length: 128,
-                data: [0; 128],
-            },
-        ];
-
-        let source: NodeId = 0;
-        let key = (source, session_id);
-        assert_eq!(listener.check_storer(key), None);
-
-        listener.store_fragment(key, fragments[0].clone());
-
-        let mut expected_storers = HashMap::new();
-        let expected_storer = Storer::new_from_fragment(fragments[0].clone());
-        expected_storers.insert(key, expected_storer);
-        expected.storers = expected_storers;
-
-        assert_eq!(listener, expected);
-        assert_eq!(listener.check_storer(key), Some(false));
-
-        listener.store_fragment(key, fragments[1].clone());
-        listener.store_fragment(key, fragments[2].clone());
-
-        let storer = expected.storers.get_mut(&key).unwrap();
-        storer.insert_fragment(fragments[1].clone());
-        storer.insert_fragment(fragments[2].clone());
-
-        assert_eq!(listener, expected);
-
-        assert_eq!(listener.check_storer(key), Some(true));
-    }
-     */
 
     #[test]
     fn forward_packet_to_transmitter_ok() {
@@ -768,5 +670,21 @@ mod tests {
 
         let received = internal_listener_to_server_logic_rx.recv().unwrap();
         assert_eq!(received, message);
+    }
+
+    #[test]
+    fn check_node_id() {
+        let node_id = 7;
+        let (
+            listener,
+            _internal_transmitter_to_listener_tx,
+            internal_listener_to_transmitter_rx,
+            internal_listener_to_server_logic_rx,
+            listener_commands_tx,
+            listener_public_tx,
+            _simulation_controller_rx,
+        ) = create_listener_and_channels(node_id);
+
+        assert_eq!(listener.get_node_id(), node_id);
     }
 }
