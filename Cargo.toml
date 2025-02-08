@@ -1,0 +1,16 @@
+[package]
+name = "ap_listener"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+crossbeam-channel = "0.5.14"
+wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git", features = ["serialize","debug"] }
+log = "0.4.22"
+assembler = { git = "https://github.com/The-Null-Pointer-Patrol/assembler.git" }
+messages = { git = "https://github.com/The-Null-Pointer-Patrol/messages.git"}
+ap_sc_notifier = { git = "https://github.com/di-bon/ap_sc_notifier.git" }
+ap_transmitter = { git = "https://github.com/di-bon/ap_transmitter.git", branch = "dev" }
+
+[dev-dependencies]
+ntest = "0.7.2"
