@@ -65,8 +65,8 @@ impl Listener {
     pub fn run(&mut self) {
         panic::set_hook(Box::new(|info| {
             let panic_msg = format!("Panic occurred: {info}");
-            log::error!("{panic_msg}"); // Log the panic
-            eprintln!("{panic_msg}"); // Print to stderr
+            log::error!("{panic_msg}");
+            eprintln!("{panic_msg}");
         }));
 
         loop {
@@ -200,7 +200,9 @@ impl Listener {
                 self.send_message_to_logic(message);
             }
         } else {
-            let error = format!("Storer for session {session_id} not found. At this point however it should exist");
+            let error = format!(
+                "Storer for session {session_id} not found. At this point however it should exist"
+            );
             panic!("{error}");
         }
     }
