@@ -9,7 +9,7 @@ a ```Nack```, a forwarded ```FloodRequest``` or a ```FloodResponse```.
 
 The Listener stores the received message fragments, and will use the 
 Assembler when all the fragments for a given session_id are received.
-Then, the Message is forwarded to Logic, which can wither be a Client
+Then, the Message is forwarded to Logic, which can either be a Client
 or a Server, to process the high-level message appropriately.
 
 ## Usage
