@@ -10,7 +10,7 @@ log = "0.4.22"
 assembler = { git = "https://github.com/The-Null-Pointer-Patrol/assembler.git" }
 messages = { git = "https://github.com/The-Null-Pointer-Patrol/messages.git"}
 ap_sc_notifier = { git = "https://github.com/di-bon/ap_sc_notifier.git" }
-ap_transmitter = { git = "https://github.com/di-bon/ap_transmitter.git", branch = "dev" }
+ap_transmitter = { git = "https://github.com/di-bon/ap_transmitter.git" }
 
 [dev-dependencies]
 ntest = "0.7.2"
