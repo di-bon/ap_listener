@@ -29,11 +29,9 @@ impl Storer {
     /// Inserts a `Fragment` into `Storer`
     /// # Panics
     /// Panics if `fragment.fragment_index` is equal or exceeds `self.fragment_count`
+    #[allow(clippy::cast_possible_truncation)]
     pub(super) fn insert_fragment(&mut self, fragment: Fragment) {
-        #[allow(clippy::cast_possible_truncation)]
-        if (fragment.fragment_index as usize) >= self.fragment_count {
-            panic!("fragment index {} out of bounds", fragment.fragment_index);
-        }
+        assert!((fragment.fragment_index as usize) < self.fragment_count, "fragment index {} out of bounds", fragment.fragment_index);
         log::info!("Storing fragment {fragment}");
         self.fragments.insert(fragment.fragment_index, fragment);
     }
