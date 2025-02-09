@@ -207,7 +207,7 @@ impl Listener {
         }
     }
 
-    /// Handles the logic of a NACK by sending the appropriate PacketCommand to Transmitter
+    /// Handles the logic of a NACK by sending the appropriate `PacketCommand` to `Transmitter`
     fn process_nack(&mut self, session_id: u64, routing_header: &SourceRoutingHeader, nack: Nack) {
         let source = Self::get_source(routing_header);
 
@@ -220,7 +220,7 @@ impl Listener {
         self.send_command_to_transmitter(command);
     }
 
-    /// Handles the logic of an ACK by sending the appropriate PacketCommand to Transmitter
+    /// Handles the logic of an ACK by sending the appropriate `PacketCommand` to `Transmitter`
     fn process_ack(&mut self, session_id: u64, routing_header: &SourceRoutingHeader, ack: Ack) {
         let source = Self::get_source(routing_header);
 
